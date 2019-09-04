@@ -59,6 +59,8 @@
     let audioSource = null;
     let scriptProcessor = null;
 
+    let impulseResponseSpectrum = new Float32Array(2 ** 18);
+
     let audioPlaybackWhenResumed = false;
 
     function initializeAudio() {
@@ -81,6 +83,19 @@
 
         // script processor
         scriptProcessor = audioContext.createScriptProcessor(4096, 2, 2);
+
+        //
+        let request = new XMLHttpRequest();
+        request.open("GET", "impulse_response/Narrow Bumpy Space.wav");
+        request.responseType = "arraybuffer";
+        request.onreadystatechange = function() {
+            if (request.readyState == XMLHttpRequest.DONE) {
+                if (request.status == 200) {
+
+                }
+            }
+        };
+        request.send();
     }
 
     function terminateAudio() {
@@ -139,4 +154,38 @@
         return !audioElement.paused;
     }
 
+    function setImpulseResponse(data) {
+        audioContext.decodeAudioData(data)
+            .then((audioBuffer) => {
+
+            });
+    }
+
 })();
+
+function test() {
+    let a = [ 1, 0, 2, 0, 5, 0, 4, 0, 1, 0, 8, 0, 10, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ];
+    let b = [ 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ];
+    console.log(a);
+    console.log(b);
+    DFT.fftHighSpeed(16, a);
+    DFT.fftHighSpeed(16, b);
+    for (let i = 0; i < a.length / 2; ++i) {
+        let j = i << 1;
+        let ar = a[j + 0];
+        let ai = a[j + 1];
+        let br = b[j + 0];
+        let bi = b[j + 1];
+        a[j + 0] = ar * br - ai * bi;
+        a[j + 1] = ar * bi + ai * br;
+    }
+    DFT.fftHighSpeed(16, a, true);
+    console.log(a.map((v) => { return Math.round(v * 10000) / 10000; }));
+
+    let c = new Float32Array(2 ** 18);
+    let start = new Date();
+    for (let i = 0; i < 100; ++i) {
+        DFT.fftHighSpeed(c.length / 2, c);
+    }
+    console.log(new Date().getTime() - start.getTime());
+}
