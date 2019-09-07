@@ -1,5 +1,4 @@
-
-(function() {
+(function () {
 
     "use strict";
 
@@ -33,18 +32,22 @@
 
     function onSuspend(event) {
         console.log("onSuspend");
-        suspendAudio();
+        // suspendAudio();
     }
 
     function onResume(event) {
         console.log("onResume");
-        resumeAudio();
+        // resumeAudio();
     }
 
     function onClickPlayButton(event) {
         console.log("onClickPlayButton");
         initializeAudio();
-        playAudio();
+        if (!isPlayAudio()) {
+            playAudio();
+        } else {
+            stopAudio();
+        }
     }
 
     addEventListener("load", onLoad);
@@ -54,12 +57,16 @@
 
     // ======== Audio ========
 
+    const AUDIO_BUFFER_SIZE = 4096;
+
     let audioContext = null;
     let audioElement = null;
     let audioSource = null;
     let scriptProcessor = null;
 
-    let impulseResponseSpectrum = new Float32Array(2 ** 18);
+    let audioWorker = null;
+    let audioInputBuffers = null;
+    let audioOutputBuffers = null;
 
     let audioPlaybackWhenResumed = false;
 
@@ -69,48 +76,53 @@
             return;
         }
 
+        // worklet
+        audioWorker = new Worker("sound3d.js");
+        audioWorker.addEventListener('message', onAudioWorkerMessage);
+
         // AudioContext
         audioContext = new (AudioContext || webkitAudioContext)();
+
+        // script processor
+        scriptProcessor = audioContext.createScriptProcessor(AUDIO_BUFFER_SIZE, 2, 2);
+        scriptProcessor.addEventListener("audioprocess", onAudioProcess);
+        scriptProcessor.connect(audioContext.destination);
 
         // audio
         audioElement = new Audio();
         audioElement.loop = true;
-        audioElement.src = "sound.mp3";
+        audioElement.src = "orchestral_mission.mp3";
 
         // audio source
         audioSource = audioContext.createMediaElementSource(audioElement);
-        audioSource.connect(audioContext.destination);
+        audioSource.connect(scriptProcessor);
 
-        // script processor
-        scriptProcessor = audioContext.createScriptProcessor(4096, 2, 2);
-
-        //
-        let request = new XMLHttpRequest();
-        request.open("GET", "impulse_response/Narrow Bumpy Space.wav");
-        request.responseType = "arraybuffer";
-        request.onreadystatechange = function() {
-            if (request.readyState == XMLHttpRequest.DONE) {
-                if (request.status == 200) {
-
-                }
-            }
-        };
-        request.send();
+        // デフォルトのインパルス応答を設定
+        setImpulseResponseUrl("impulse_response/Narrow Bumpy Space.wav");
     }
 
+    // オーディオの終了処理
     function terminateAudio() {
         console.log("terminateAudio");
         if (!isInitializeAudio()) {
             return;
         }
+        if (isPlayAudio()) {
+            stopAudio();
+        }
+        audioWorker.removeEventListener("message", onAudioWorkerMessage);
+        audioWorker.terminate();
+        audioWorker = null;
         audioContext.close();
         audioContext = null;
     }
 
+    // オーディオは初期化されているか
     function isInitializeAudio() {
         return audioContext != null;
     }
 
+    // オーディオのレジューム処理
     function resumeAudio() {
         console.log("resumeAudio");
         if (!isInitializeAudio()) {
@@ -122,6 +134,7 @@
         }
     }
 
+    // オーディオのサスペンド処理
     function suspendAudio() {
         console.log("suspendAudio");
         if (!isInitializeAudio()) {
@@ -131,6 +144,7 @@
         stopAudio();
     }
 
+    // オーディオの再生を開始する
     function playAudio() {
         console.log("playAudio");
         if (!isInitializeAudio()) {
@@ -139,6 +153,7 @@
         audioElement.play();
     }
 
+    // オーディオの再生を停止する
     function stopAudio() {
         console.log("stopAudio");
         if (!isInitializeAudio()) {
@@ -147,6 +162,7 @@
         audioElement.pause();
     }
 
+    // オーディオは再生中か
     function isPlayAudio() {
         if (!isInitializeAudio()) {
             return false;
@@ -154,38 +170,71 @@
         return !audioElement.paused;
     }
 
-    function setImpulseResponse(data) {
+    // インパルス応答が収納されたファイルのURLを設定する
+    function setImpulseResponseUrl(url) {
+        let request = new XMLHttpRequest();
+        request.open("GET", url);
+        request.responseType = "arraybuffer";
+        request.onreadystatechange = function () {
+            if (request.readyState == XMLHttpRequest.DONE) {
+                if (request.status == 200) {
+                    setImpulseResponseData(request.response);
+                }
+            }
+        };
+        request.send();
+    }
+
+    // インパルス応答が収納された音声ファイルのデータを設定する
+    function setImpulseResponseData(data) {
         audioContext.decodeAudioData(data)
             .then((audioBuffer) => {
-
+                let impulseResponse = new Array(audioBuffer.numberOfChannels);
+                for (let i = 0; i < impulseResponse.length; ++i) {
+                    impulseResponse[i] = audioBuffer.getChannelData(i);
+                }
+                audioWorker.postMessage({
+                    "what": "setImpulseResponse"
+                }, impulseResponse.map((buffer) => buffer.buffer));
             });
     }
 
+    // ScriptProcessorの波形処理
+    function onAudioProcess(event) {
+        // オーディオ処理スレッドで処理した波形データを出力先にコピー
+        if (audioOutputBuffers != null) {
+            for (let i = 0; i < event.outputBuffer.numberOfChannels; ++i) {
+                event.outputBuffer.getChannelData(i).set(audioOutputBuffers[i]);
+            }
+            audioInputBuffers = audioOutputBuffers;
+        } else {
+            for (let i = 0; i < event.outputBuffer.numberOfChannels; ++i) {
+                event.outputBuffer.getChannelData(i).fill(0);
+            }
+        }
+
+        // オーディオ処理スレッドに入力波形データを転送
+        if (audioInputBuffers == null) {
+            audioInputBuffers = new Array(event.inputBuffer.numberOfChannels);
+            for (let i = 0; i < audioInputBuffers.length; ++i) {
+                audioInputBuffers[i] = new Float32Array(event.inputBuffer.getChannelData(i).length);
+            }
+        }
+        for (let i = 0; i < event.inputBuffer.numberOfChannels; ++i) {
+            audioInputBuffers[i].set(event.inputBuffer.getChannelData(i));
+        }
+        audioWorker.postMessage({
+            "what": "calcImpulseResponse",
+            "waveform": audioInputBuffers
+        }, audioInputBuffers.map((buffer) => buffer.buffer));
+        audioInputBuffers = null;
+    }
+
+    // オーディオ・スレッドからメッセージを受信
+    function onAudioWorkerMessage(message) {
+        if (message.data["what"] === "calcImpulseResponse") {
+            audioOutputBuffers = message.data["waveform"];
+        }
+    }
+
 })();
-
-function test() {
-    let a = [ 1, 0, 2, 0, 5, 0, 4, 0, 1, 0, 8, 0, 10, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ];
-    let b = [ 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ];
-    console.log(a);
-    console.log(b);
-    DFT.fftHighSpeed(16, a);
-    DFT.fftHighSpeed(16, b);
-    for (let i = 0; i < a.length / 2; ++i) {
-        let j = i << 1;
-        let ar = a[j + 0];
-        let ai = a[j + 1];
-        let br = b[j + 0];
-        let bi = b[j + 1];
-        a[j + 0] = ar * br - ai * bi;
-        a[j + 1] = ar * bi + ai * br;
-    }
-    DFT.fftHighSpeed(16, a, true);
-    console.log(a.map((v) => { return Math.round(v * 10000) / 10000; }));
-
-    let c = new Float32Array(2 ** 18);
-    let start = new Date();
-    for (let i = 0; i < 100; ++i) {
-        DFT.fftHighSpeed(c.length / 2, c);
-    }
-    console.log(new Date().getTime() - start.getTime());
-}
