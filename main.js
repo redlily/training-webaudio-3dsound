@@ -57,6 +57,7 @@
 
     // ======== Audio ========
 
+    const AUDIO_CHANNEL_COUNT = 2;
     const AUDIO_BUFFER_SIZE = 4096;
 
     let audioContext = null;
@@ -79,12 +80,18 @@
         // worklet
         audioWorker = new Worker("sound3d.js");
         audioWorker.addEventListener('message', onAudioWorkerMessage);
+        audioWorker.postMessage({
+            "what": "initialize",
+            "channelCount": AUDIO_CHANNEL_COUNT,
+            "sampleBlockSize": AUDIO_BUFFER_SIZE
+        });
 
         // AudioContext
         audioContext = new (AudioContext || webkitAudioContext)();
 
         // script processor
-        scriptProcessor = audioContext.createScriptProcessor(AUDIO_BUFFER_SIZE, 2, 2);
+        scriptProcessor = audioContext.createScriptProcessor(
+            AUDIO_BUFFER_SIZE, AUDIO_CHANNEL_COUNT, AUDIO_CHANNEL_COUNT);
         scriptProcessor.addEventListener("audioprocess", onAudioProcess);
         scriptProcessor.connect(audioContext.destination);
 
@@ -189,19 +196,20 @@
     function setImpulseResponseData(data) {
         audioContext.decodeAudioData(data)
             .then((audioBuffer) => {
-                let impulseResponse = new Array(audioBuffer.numberOfChannels);
-                for (let i = 0; i < impulseResponse.length; ++i) {
-                    impulseResponse[i] = audioBuffer.getChannelData(i);
+                let impulseResponses = new Array(audioBuffer.numberOfChannels);
+                for (let i = 0; i < impulseResponses.length; ++i) {
+                    impulseResponses[i] = audioBuffer.getChannelData(i);
                 }
                 audioWorker.postMessage({
-                    "what": "setImpulseResponse"
-                }, impulseResponse.map((buffer) => buffer.buffer));
+                    "what": "setImpulseResponses",
+                    "impulseResponses": impulseResponses
+                }, impulseResponses.map((buffer) => buffer.buffer));
             });
     }
 
     // ScriptProcessorの波形処理
     function onAudioProcess(event) {
-        // オーディオ処理スレッドで処理した波形データを出力先にコピー
+        // オーディオ・スレッドで処理した波形データを出力先にコピー
         if (audioOutputBuffers != null) {
             for (let i = 0; i < event.outputBuffer.numberOfChannels; ++i) {
                 event.outputBuffer.getChannelData(i).set(audioOutputBuffers[i]);
@@ -213,7 +221,7 @@
             }
         }
 
-        // オーディオ処理スレッドに入力波形データを転送
+        // オーディオ・スレッドに入力波形データを転送
         if (audioInputBuffers == null) {
             audioInputBuffers = new Array(event.inputBuffer.numberOfChannels);
             for (let i = 0; i < audioInputBuffers.length; ++i) {
@@ -224,16 +232,16 @@
             audioInputBuffers[i].set(event.inputBuffer.getChannelData(i));
         }
         audioWorker.postMessage({
-            "what": "calcImpulseResponse",
-            "waveform": audioInputBuffers
+            "what": "calcImpulseResponses",
+            "inputBuffers": audioInputBuffers
         }, audioInputBuffers.map((buffer) => buffer.buffer));
         audioInputBuffers = null;
     }
 
     // オーディオ・スレッドからメッセージを受信
     function onAudioWorkerMessage(message) {
-        if (message.data["what"] === "calcImpulseResponse") {
-            audioOutputBuffers = message.data["waveform"];
+        if (message.data["what"] === "calcImpulseResponses") {
+            audioOutputBuffers = message.data["outputBuffers"];
         }
     }
 
