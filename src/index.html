@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>3D Sound on WebAudio</title>
+    <script type="text/javascript" src="dft.js"></script>
+    <script type="text/javascript" src="main.js"></script>
+    <style type="text/css">
+        table {
+            border: 0
+        }
+
+        td {
+            padding: 10px
+        }
+    </style>
+</head>
+<body>
+<table>
+    <tr>
+        <td>
+            再生ファイル
+        </td>
+        <td>
+            <input id="fileSelector" type="file">
+        </td>
+    </tr>
+    <tr>
+        <td>
+            音響環境
+        </td>
+        <td>
+            <label>
+                <select id="irSelector" required>
+                    <option value="../assets/ir/Block Inside.wav">Block Inside</option>
+                    <option value="../assets/ir/Bottle Hall.wav" selected>Bottle Hall</option>
+                    <option value="../assets/ir/Cement Blocks 1.wav">Cement Blocks 1</option>
+                    <option value="../assets/ir/Cement Blocks 2.wav">Cement Blocks 2</option>
+                    <option value="../assets/ir/Chateau de Logne, Outside.wav">Chateau de Logne, Outside</option>
+                    <option value="../assets/ir/Deep Space.wav">Deep Space</option>
+                    <option value="../assets/ir/Direct Cabinet N1.wav">Direct Cabinet N1</option>
+                    <option value="../assets/ir/Direct Cabinet N2.wav">Direct Cabinet N2</option>
+                    <option value="../assets/ir/Direct Cabinet N3.wav">Direct Cabinet N3</option>
+                    <option value="../assets/ir/Direct Cabinet N4.wav">Direct Cabinet N4</option>
+                    <option value="../assets/ir/Five Columns.wav">Five Columns</option>
+                    <option value="../assets/ir/French 18th Century Salon.wav">French 18th Century Salon</option>
+                    <option value="../assets/ir/Greek 7 Echo Hall.wav">Greek 7 Echo Hall</option>
+                    <option value="../assets/ir/Highly Damped Large Room.wav">Highly Damped Large Room</option>
+                    <option value="../assets/ir/In The Silo.wav">In The Silo</option>
+                    <option value="../assets/ir/In The Silo Revised.wav">In The Silo Revised</option>
+                    <option value="../assets/ir/Masonic Lodge.wav">Masonic Lodge</option>
+                    <option value="../assets/ir/Narrow Bumpy Space.wav">Narrow Bumpy Space</option>
+                    <option value="../assets/ir/Nice Drum Room.wav">Nice Drum Room</option>
+                    <option value="../assets/ir/Rays.wav">Rays</option>
+                    <option value="../assets/ir/Ruby Room.wav">Ruby Room</option>
+                    <option value="../assets/ir/Scala Milan Opera Hall.wav">Scala Milan Opera Hall</option>
+                    <option value="../assets/ir/Small Drum Room.wav">Small Drum Room</option>
+                    <option value="../assets/ir/Small Prehistoric Cave.wav">Small Prehistoric Cave</option>
+                    <option value="../assets/ir/Trig Room.wav">Trig Room</option>
+                </select>
+            </label>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            3Dサウンド
+        </td>
+        <td>
+            <input id="irEnabled" type="checkbox" checked><label for="irEnabled"></label>
+        </td>
+    </tr>
+    <tr>
+        <td>
+        </td>
+        <td>
+            <input id="playButton" type="button" value="再生">
+        </td>
+    </tr>
+</table>
+</body>
+</html>

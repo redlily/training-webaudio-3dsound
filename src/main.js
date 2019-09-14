@@ -5,6 +5,8 @@
     // ======== UI ========
 
     let audioFileSelector = null;
+    let audioIrSelector = null;
+    let audioIrEnableCheck = null;
     let audioPlayButton = null;
 
     function onLoad(event) {
@@ -13,6 +15,10 @@
         // ui
         audioFileSelector = document.getElementById("fileSelector");
         audioFileSelector.addEventListener("change", onFileSelected);
+        audioIrSelector = document.getElementById("irSelector");
+        audioIrSelector.addEventListener("change", onIrSelected);
+        audioIrEnableCheck = document.getElementById("irEnabled");
+        audioIrEnableCheck.addEventListener("change", onChangeIrEnabled);
         audioPlayButton = document.getElementById("playButton");
         audioPlayButton.addEventListener("click", onClickPlayButton);
     }
@@ -24,8 +30,9 @@
         terminateAudio();
 
         // ui
-        removeEventListener("change", onFileSelected);
-        removeEventListener("click", onClickPlayButton);
+        audioFileSelector.removeEventListener("change", onFileSelected);
+        audioIrEnableCheck.removeEventListener("change", onChangeIrEnabled);
+        audioPlayButton.removeEventListener("click", onClickPlayButton);
 
         // window
         removeEventListener("load", onLoad);
@@ -46,6 +53,17 @@
 
     function onFileSelected(event) {
         console.log("onFileSelected");
+        setAudioUrl(URL.createObjectURL(event.target.files[0]));
+    }
+
+    function onIrSelected(event) {
+        console.log("onChangeIrEnabled");
+        setImpulseResponseUrl(event.target.value);
+    }
+
+    function onChangeIrEnabled(event) {
+        console.log("onChangeIrEnabled");
+        setImpulseResponseEnabled(event.target.checked);
     }
 
     function onClickPlayButton(event) {
@@ -68,6 +86,9 @@
     const AUDIO_CHANNEL_COUNT = 2;
     const AUDIO_BUFFER_SIZE = 2 ** 14;
 
+    let audioUrl = "../assets/bgm/default.mp3";
+    let impulseResponseUrl = "../assets/ir/Bottle Hall.wav";
+
     let audioContext = null;
     let audioElement = null;
     let audioSource = null;
@@ -76,6 +97,7 @@
     let audioWorker = null;
     let audioInputBuffers = null;
     let audioOutputBuffers = null;
+    let audioIrEnabled = true;
 
     let audioPlaybackWhenResumed = false;
 
@@ -97,6 +119,7 @@
         for (let i = 0; i < audioInputBuffers.length; ++i) {
             audioInputBuffers[i] = new Float32Array(AUDIO_BUFFER_SIZE);
         }
+        setImpulseResponseEnabled(audioIrEnabled);
 
         // AudioContext
         audioContext = new (AudioContext || webkitAudioContext)();
@@ -110,14 +133,14 @@
         // audio
         audioElement = new Audio();
         audioElement.loop = true;
-        audioElement.src = "orchestral_mission.mp3";
+        audioElement.src = audioUrl;
 
         // audio source
         audioSource = audioContext.createMediaElementSource(audioElement);
         audioSource.connect(scriptProcessor);
 
         // デフォルトのインパルス応答を設定
-        setImpulseResponseUrl("impulse_response/Narrow Bumpy Space.wav");
+        setImpulseResponseUrl(impulseResponseUrl);
     }
 
     // オーディオの終了処理
@@ -189,19 +212,33 @@
         return !audioElement.paused;
     }
 
+    // インパルス応答を有効にするか否かを設定する
+    function setImpulseResponseEnabled(enabled) {
+        audioIrEnabled = enabled;
+        if (isInitializeAudio()) {
+            audioWorker.postMessage({
+                "what": "setEnable",
+                "enabled": enabled
+            });
+        }
+    }
+
     // インパルス応答が収納されたファイルのURLを設定する
     function setImpulseResponseUrl(url) {
-        let request = new XMLHttpRequest();
-        request.open("GET", url);
-        request.responseType = "arraybuffer";
-        request.onreadystatechange = function () {
-            if (request.readyState == XMLHttpRequest.DONE) {
-                if (request.status == 200) {
-                    setImpulseResponseData(request.response);
+        impulseResponseUrl = url;
+        if (isInitializeAudio()) {
+            let request = new XMLHttpRequest();
+            request.open("GET", url);
+            request.responseType = "arraybuffer";
+            request.onreadystatechange = function () {
+                if (request.readyState == XMLHttpRequest.DONE) {
+                    if (request.status == 200) {
+                        setImpulseResponseData(request.response);
+                    }
                 }
-            }
-        };
-        request.send();
+            };
+            request.send();
+        }
     }
 
     // インパルス応答が収納された音声ファイルのデータを設定する
@@ -217,6 +254,14 @@
                     "impulseResponses": impulseResponses
                 }, impulseResponses.map((buffer) => buffer.buffer));
             });
+    }
+
+    // 再生する音声データを設定する
+    function setAudioUrl(url) {
+        audioUrl = url;
+        if (isInitializeAudio()) {
+            audioElement.src = url;
+        }
     }
 
     // ScriptProcessorの波形処理

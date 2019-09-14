@@ -19,6 +19,9 @@ self.workBuffers = null;
 // 複素数バッファの書き込み開始位置
 self.bufferPosition = 0;
 
+// 処理の有効性を設定
+self.enabled = true;
+
 self.addEventListener("message", (message) => {
     switch (message.data["what"]) {
         // 初期化
@@ -32,11 +35,19 @@ self.addEventListener("message", (message) => {
             console.assert(self.sampleBlockSize == nextPowOf2(self.sampleBlockSize));
             break;
         }
+        // インパルス応答の処理を有効にするか否かを設定
+        case "setEnable": {
+            self.enabled = message.data["enabled"]; // 有効か否か
+            console.log(`setEnabled ${self.enabled}`);
+            break;
+        }
         // インパルス応答を設定
         case "setImpulseResponses": {
             let impulseResponses = message.data["impulseResponses"]; // インパルス応答
 
-            console.log(`audioWorker: setImpulseResponses`);
+            console.log(
+                `audioWorker: setImpulseResponses,`+
+                `${impulseResponses.map((v) => " " + (Math.round(v.length / 480) / 100).toString())}`);
             console.assert(impulseResponses.length > 0);
             console.assert(impulseResponses.every((value => value.length == impulseResponses[0].length)));
 
@@ -57,6 +68,7 @@ self.addEventListener("message", (message) => {
                 DFT.fftHighSpeed(self.impulseResponseSampleSize, dst); // 畳み込み演算のためにインパルス応答の周波数特性を離散フーリエ変換を用いて求めておく
                 self.impulseResponses[i] = dst;
             }
+            console.log(`impulseResponses's buffer size: 2^${Math.log2(self.impulseResponseSampleSize)}`);
 
             // 作業用バッファ関連の変数の初期化する
             self.workBuffers = new Array(self.channelCount);
@@ -91,31 +103,33 @@ self.addEventListener("message", (message) => {
                 }
             }
 
-            // 高速フーリエ変換を用いて畳み込み演算を行う
-            for (let i = 0; i < self.channelCount; ++i) {
-                let ir = self.impulseResponses[i % self.impulseResponses.length];
-                let src = self.templateBuffers[i];
-                let wb = self.workBuffers[i];
-                wb.set(src);
+            if (self.enabled) {
+                // 高速フーリエ変換を用いて畳み込み演算を行う
+                for (let i = 0; i < self.channelCount; ++i) {
+                    let ir = self.impulseResponses[i % self.impulseResponses.length];
+                    let src = self.templateBuffers[i];
+                    let wb = self.workBuffers[i];
+                    wb.set(src);
 
-                // 畳み込み演算
-                DFT.fftHighSpeed(self.impulseResponseSampleSize, wb);
-                for (let j = 0; j < self.impulseResponseSampleSize; ++j) {
-                    let re = (j << 1);
-                    let im = (j << 1) + 1;
-                    let ar = ir[re];
-                    let ai = ir[im];
-                    let br = wb[re];
-                    let bi = wb[im];
-                    wb[re] = ar * br - ai * bi;
-                    wb[im] = ar * bi + ai * br;
-                }
-                DFT.fftHighSpeed(self.impulseResponseSampleSize, wb, true);
+                    // 畳み込み演算
+                    DFT.fftHighSpeed(self.impulseResponseSampleSize, wb);
+                    for (let j = 0; j < self.impulseResponseSampleSize; ++j) {
+                        let re = (j << 1);
+                        let im = (j << 1) + 1;
+                        let ar = ir[re];
+                        let ai = ir[im];
+                        let br = wb[re];
+                        let bi = wb[im];
+                        wb[re] = ar * br - ai * bi;
+                        wb[im] = ar * bi + ai * br;
+                    }
+                    DFT.fftHighSpeed(self.impulseResponseSampleSize, wb, true);
 
-                // 畳み込み演算の結果を入力元に戻す
-                let dst = waveformBuffers[i];
-                for (let j = 0; j < self.sampleBlockSize; ++j) {
-                    dst[j] = wb[bufferOffset + (j << 1)];
+                    // 畳み込み演算の結果を入力元に戻す
+                    let dst = waveformBuffers[i];
+                    for (let j = 0; j < self.sampleBlockSize; ++j) {
+                        dst[j] = wb[bufferOffset + (j << 1)];
+                    }
                 }
             }
             self.bufferPosition = (self.bufferPosition + self.sampleBlockSize) % self.impulseResponseSampleSize;
