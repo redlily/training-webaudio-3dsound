@@ -4,12 +4,15 @@
 
     // ======== UI ========
 
+    let audioFileSelector = null;
     let audioPlayButton = null;
 
     function onLoad(event) {
         console.log("onLoad");
 
         // ui
+        audioFileSelector = document.getElementById("fileSelector");
+        audioFileSelector.addEventListener("change", onFileSelected);
         audioPlayButton = document.getElementById("playButton");
         audioPlayButton.addEventListener("click", onClickPlayButton);
     }
@@ -21,6 +24,7 @@
         terminateAudio();
 
         // ui
+        removeEventListener("change", onFileSelected);
         removeEventListener("click", onClickPlayButton);
 
         // window
@@ -38,6 +42,10 @@
     function onResume(event) {
         console.log("onResume");
         // resumeAudio();
+    }
+
+    function onFileSelected(event) {
+        console.log("onFileSelected");
     }
 
     function onClickPlayButton(event) {
@@ -58,7 +66,7 @@
     // ======== Audio ========
 
     const AUDIO_CHANNEL_COUNT = 2;
-    const AUDIO_BUFFER_SIZE = 4096;
+    const AUDIO_BUFFER_SIZE = 2 ** 14;
 
     let audioContext = null;
     let audioElement = null;
@@ -85,6 +93,10 @@
             "channelCount": AUDIO_CHANNEL_COUNT,
             "sampleBlockSize": AUDIO_BUFFER_SIZE
         });
+        audioInputBuffers = new Array(AUDIO_CHANNEL_COUNT);
+        for (let i = 0; i < audioInputBuffers.length; ++i) {
+            audioInputBuffers[i] = new Float32Array(AUDIO_BUFFER_SIZE);
+        }
 
         // AudioContext
         audioContext = new (AudioContext || webkitAudioContext)();
@@ -215,6 +227,7 @@
                 event.outputBuffer.getChannelData(i).set(audioOutputBuffers[i]);
             }
             audioInputBuffers = audioOutputBuffers;
+            audioOutputBuffers = null;
         } else {
             for (let i = 0; i < event.outputBuffer.numberOfChannels; ++i) {
                 event.outputBuffer.getChannelData(i).fill(0);
@@ -222,20 +235,16 @@
         }
 
         // オーディオ・スレッドに入力波形データを転送
-        if (audioInputBuffers == null) {
-            audioInputBuffers = new Array(event.inputBuffer.numberOfChannels);
-            for (let i = 0; i < audioInputBuffers.length; ++i) {
-                audioInputBuffers[i] = new Float32Array(event.inputBuffer.getChannelData(i).length);
+        if (audioInputBuffers != null) {
+            for (let i = 0; i < event.inputBuffer.numberOfChannels; ++i) {
+                audioInputBuffers[i].set(event.inputBuffer.getChannelData(i));
             }
+            audioWorker.postMessage({
+                "what": "calcImpulseResponses",
+                "inputBuffers": audioInputBuffers
+            }, audioInputBuffers.map((buffer) => buffer.buffer));
+            audioInputBuffers = null;
         }
-        for (let i = 0; i < event.inputBuffer.numberOfChannels; ++i) {
-            audioInputBuffers[i].set(event.inputBuffer.getChannelData(i));
-        }
-        audioWorker.postMessage({
-            "what": "calcImpulseResponses",
-            "inputBuffers": audioInputBuffers
-        }, audioInputBuffers.map((buffer) => buffer.buffer));
-        audioInputBuffers = null;
     }
 
     // オーディオ・スレッドからメッセージを受信
